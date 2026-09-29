@@ -12,11 +12,6 @@ TOKEN = os.environ.get('TOKEN')
 KEY_FILE = 'keys.json'
 HORAS_EXPIRACION = 24
 
-SCRIPTS = {
-    "monochrome": "🎮 MONOCHROME",
-    "beta": "🔥 BETA TEST FIXED"
-}
-
 app = Flask('__name__')
 
 def cargar_keys():
@@ -50,18 +45,13 @@ intents.members = True
 intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-class ScriptSelect(discord.ui.Select):
+class KeyView(discord.ui.View):
     def __init__(self):
-        options = [
-            discord.SelectOption(label=nombre, value=codigo)
-            for codigo, nombre in SCRIPTS.items()
-        ]
-        super().__init__(placeholder="🎯 Elegí el script...", options=options)
+        super().__init__(timeout=None)
 
-    async def callback(self, interaction: discord.Interaction):
-        codigo = self.values[0]
-        nombre = SCRIPTS[codigo]
-        user_id = f"{interaction.user.id}_{codigo}"
+    @discord.ui.button(label="🎁 Obtener Key", style=discord.ButtonStyle.green, custom_id="get_key_btn")
+    async def get_key(self, interaction: discord.Interaction, button: discord.ui.Button):
+        user_id = str(interaction.user.id)
         k = cargar_keys()
         
         if user_id in k:
@@ -71,12 +61,14 @@ class ScriptSelect(discord.ui.Select):
                 return
             if key_expirada(info):
                 nueva = generar_key()
+                while nueva in [d['key'] for d in k.values()]:
+                    nueva = generar_key()
                 info['key'] = nueva
                 info['creada'] = str(datetime.utcnow())
                 info['expira'] = str(datetime.utcnow() + timedelta(hours=HORAS_EXPIRACION))
                 guardar_keys(k)
                 await interaction.response.send_message(
-                    f"⏰ Tu key anterior expiró.\n🔑 **Key NUEVA para {nombre}:**\n```{nueva}```\n⏳ Dura {HORAS_EXPIRACION}h.",
+                    f"⏰ Tu key anterior expiró.\n🔑 **Key NUEVA:**\n```{nueva}```\n⏳ Dura {HORAS_EXPIRACION}h.",
                     ephemeral=True
                 )
                 return
@@ -85,7 +77,7 @@ class ScriptSelect(discord.ui.Select):
             horas = int(diff.total_seconds() // 3600)
             mins = int((diff.total_seconds() % 3600) // 60)
             await interaction.response.send_message(
-                f"🔑 Tu key para **{nombre}** es:\n```{info['key']}```\n⏳ Expira en **{horas}h {mins}m**.",
+                f"🔑 Tu key es:\n```{info['key']}```\n⏳ Expira en **{horas}h {mins}m**.",
                 ephemeral=True
             )
             return
@@ -97,7 +89,6 @@ class ScriptSelect(discord.ui.Select):
         k[user_id] = {
             'key': nueva_key,
             'user_name': str(interaction.user),
-            'script': codigo,
             'baneada': False,
             'creada': str(datetime.utcnow()),
             'expira': str(datetime.utcnow() + timedelta(hours=HORAS_EXPIRACION))
@@ -105,24 +96,19 @@ class ScriptSelect(discord.ui.Select):
         guardar_keys(k)
         
         await interaction.response.send_message(
-            f"🔑 **Tu key para {nombre}:**\n```{nueva_key}```\n⏳ Dura **{HORAS_EXPIRACION}h**.\n⚠️ Solo funciona en {nombre}.",
+            f"🔑 **Tu key de MONOCHROME:**\n```{nueva_key}```\n⏳ Dura **{HORAS_EXPIRACION} horas**.\n⚠️ No la compartas.",
             ephemeral=True
         )
-
-class KeyView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-        self.add_item(ScriptSelect())
 
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def setup(ctx):
     embed = discord.Embed(
-        title="🔑 KEYS by_LOLMP3",
-        description="Elegí el script abajo y te doy tu key única.",
+        title="🔑 MONOCHROME by_LOLMP3",
+        description="Tocá el botón para obtener tu **key única**.",
         color=discord.Color.purple()
     )
-    embed.set_footer(text="No la compartas, es personal")
+    embed.set_footer(text="Dura 24h - No la compartas")
     await ctx.message.delete()
     await ctx.send(embed=embed, view=KeyView())
 
@@ -144,8 +130,7 @@ async def listarkeys(ctx):
             diff = expira - datetime.utcnow()
             horas = int(diff.total_seconds() // 3600)
             estado = f"✅ {horas}h"
-        sc = data.get('script', '?')
-        txt += f"`{data['key']}` - {data['user_name']} - {sc} - {estado}\n"
+        txt += f"`{data['key']}` - {data['user_name']} - {estado}\n"
     await ctx.send(txt[:2000])
 
 @bot.command()
@@ -170,7 +155,6 @@ def verify():
     try:
         data = request.get_json()
         key = data.get('key', '')
-        script = data.get('script', '')
         k = cargar_keys()
         for uid, info in k.items():
             if info['key'] == key:
@@ -178,8 +162,6 @@ def verify():
                     return jsonify({'valid': False, 'reason': 'baneada'})
                 if key_expirada(info):
                     return jsonify({'valid': False, 'reason': 'expirada'})
-                if script and info.get('script') != script:
-                    return jsonify({'valid': False, 'reason': 'script incorrecto'})
                 return jsonify({'valid': True})
         return jsonify({'valid': False, 'reason': 'no existe'})
     except Exception as e:
@@ -187,7 +169,7 @@ def verify():
 
 @app.route('/')
 def home():
-    return "Key Server activo"
+    return "MONOCHROME Key Server activo"
 
 def run_flask():
     port = int(os.environ.get('PORT', 8080))
