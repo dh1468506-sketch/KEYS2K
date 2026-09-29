@@ -145,6 +145,116 @@ async def banear(ctx, key: str):
             return
     await ctx.send(f"❌ No encontré esa key.")
 
+# ═══════════════════════════════════════
+# COMANDO 2: !mikey @user - Ver key de un usuario
+# ═══════════════════════════════════════
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def mikey(ctx, miembro: discord.Member = None):
+    if miembro is None:
+        await ctx.send("❌ Usá: `!mikey @usuario`")
+        return
+    k = cargar_keys()
+    user_id = str(miembro.id)
+    if user_id not in k:
+        await ctx.send(f"❌ **{miembro.name}** no tiene ninguna key registrada.")
+        return
+    data = k[user_id]
+    if data.get('baneada'):
+        estado = "🚫 BANEADA"
+    elif key_expirada(data):
+        estado = "⏰ EXPIRADA"
+    else:
+        expira = datetime.fromisoformat(data['expira'])
+        diff = expira - datetime.utcnow()
+        horas = int(diff.total_seconds() // 3600)
+        mins = int((diff.total_seconds() % 3600) // 60)
+        estado = f"✅ Activa (expira en {horas}h {mins}m)"
+    
+    embed = discord.Embed(
+        title=f"🔑 Key de {miembro.name}",
+        color=discord.Color.blue()
+    )
+    embed.add_field(name="Usuario", value=miembro.mention, inline=False)
+    embed.add_field(name="Key", value=f"`{data['key']}`", inline=False)
+    embed.add_field(name="Estado", value=estado, inline=False)
+    embed.set_thumbnail(url=miembro.display_avatar.url)
+    await ctx.send(embed=embed)
+
+# ═══════════════════════════════════════
+# COMANDO 3: !resetkeys - Borrar TODAS las keys
+# ═══════════════════════════════════════
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def resetkeys(ctx):
+    k = cargar_keys()
+    total = len(k)
+    if total == 0:
+        await ctx.send("❌ No hay keys para borrar.")
+        return
+    
+    embed = discord.Embed(
+        title="⚠️ CONFIRMACIÓN REQUERIDA",
+        description=f"Estás a punto de borrar **{total} keys**.\n\n"
+                    f"**Esto NO se puede deshacer.**\n\n"
+                    f"Escribí `CONFIRMAR` en los próximos 30 segundos para borrar todo.",
+        color=discord.Color.red()
+    )
+    await ctx.send(embed=embed)
+    
+    def check(m):
+        return m.author == ctx.author and m.channel == ctx.channel and m.content == "CONFIRMAR"
+    
+    try:
+        await bot.wait_for('message', timeout=30.0, check=check)
+        guardar_keys({})
+        await ctx.send(f"✅ Se borraron **{total} keys** correctamente.")
+    except:
+        await ctx.send("❌ Cancelado. No se borró nada.")
+
+# ═══════════════════════════════════════
+# COMANDO 4: !info - Info del bot
+# ═══════════════════════════════════════
+@bot.command()
+async def info(ctx):
+    k = cargar_keys()
+    total = len(k)
+    activas = 0
+    baneadas = 0
+    expiradas = 0
+    
+    for uid, data in k.items():
+        if data.get('baneada'):
+            baneadas += 1
+        elif key_expirada(data):
+            expiradas += 1
+        else:
+            activas += 1
+    
+    embed = discord.Embed(
+        title="ℹ️ MONOCHROME KEY BOT",
+        description="Sistema de keys para MONOCHROME by_LOLMP3",
+        color=discord.Color.purple()
+    )
+    embed.add_field(name="📊 Keys totales", value=f"`{total}`", inline=True)
+    embed.add_field(name="✅ Activas", value=f"`{activas}`", inline=True)
+    embed.add_field(name="🚫 Baneadas", value=f"`{baneadas}`", inline=True)
+    embed.add_field(name="⏰ Expiradas", value=f"`{expiradas}`", inline=True)
+    embed.add_field(name="⏱️ Duración de keys", value=f"`{HORAS_EXPIRACION}h`", inline=True)
+    embed.add_field(name="🤖 Estado", value="`🟢 Online`", inline=True)
+    embed.add_field(
+        name="📋 Comandos disponibles",
+        value="`!setup` - Poner mensaje con botón\n"
+              "`!listarkeys` - Ver todas las keys\n"
+              "`!mikey @user` - Ver key de un usuario\n"
+              "`!banear KEY` - Banear una key\n"
+              "`!resetkeys` - Borrar TODAS las keys\n"
+              "`!info` - Esta info",
+        inline=False
+    )
+    embed.set_footer(text=f"Solicitado por {ctx.author.name}")
+    await ctx.send(embed=embed)
+
 @bot.event
 async def on_ready():
     bot.add_view(KeyView())
