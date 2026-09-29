@@ -3,14 +3,33 @@ from discord.ext import commands
 import random
 import string
 import os
+import threading
+from flask import Flask, request, jsonify
+import json
 
 TOKEN = os.environ.get('TOKEN')
+KEY_FILE = 'keys.json'
 
-keys = {}
+app = Flask('__name__')
+
+def cargar_keys():
+    if os.path.exists(KEY_FILE):
+        try:
+            with open(KEY_FILE, 'r') as f:
+                return json.load(f)
+        except:
+            return {}
+    return {}
+
+def guardar_keys(keys):
+    with open(KEY_FILE, 'w') as f:
+        json.dump(keys, f, indent=2)
 
 def generar_key():
     chars = string.ascii_uppercase + string.digits
     return 'MONO-' + ''.join(random.choice(chars) for _ in range(8))
+
+keys = cargar_keys()
 
 intents = discord.Intents.default()
 intents.members = True
@@ -34,6 +53,7 @@ class KeyView(discord.ui.View):
         while nueva_key in [k['key'] for k in keys.values()]:
             nueva_key = generar_key()
         keys[user_id] = {'key': nueva_key, 'user_name': str(interaction.user), 'baneada': False}
+        guardar_keys(keys)
         await interaction.response.send_message(f"🔑 **Tu key única:**\n```{nueva_key}```\n⚠️ No la compartas.", ephemeral=True)
 
 @bot.command()
@@ -47,11 +67,12 @@ async def setup(ctx):
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def listarkeys(ctx):
-    if not keys:
+    k = cargar_keys()
+    if not k:
         await ctx.send("No hay keys registradas.")
         return
     txt = "**Keys registradas:**\n"
-    for uid, data in keys.items():
+    for uid, data in k.items():
         estado = "🚫 BANEADA" if data.get('baneada') else "✅ Activa"
         txt += f"`{data['key']}` - {data['user_name']} - {estado}\n"
     await ctx.send(txt[:2000])
@@ -59,9 +80,11 @@ async def listarkeys(ctx):
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def banear(ctx, key: str):
-    for uid, data in keys.items():
+    k = cargar_keys()
+    for uid, data in k.items():
         if data['key'] == key:
             data['baneada'] = True
+            guardar_keys(k)
             await ctx.send(f"✅ Key baneada: `{key}`")
             return
     await ctx.send(f"❌ No encontré esa key.")
@@ -71,4 +94,28 @@ async def on_ready():
     bot.add_view(KeyView())
     print(f'✅ Bot conectado: {bot.user.name}')
 
+@app.route('/verify', methods=['POST'])
+def verify():
+    try:
+        data = request.get_json()
+        key = data.get('key', '')
+        k = cargar_keys()
+        for uid, info in k.items():
+            if info['key'] == key:
+                if info.get('baneada'):
+                    return jsonify({'valid': False, 'reason': 'baneada'})
+                return jsonify({'valid': True})
+        return jsonify({'valid': False, 'reason': 'no existe'})
+    except Exception as e:
+        return jsonify({'valid': False, 'reason': str(e)})
+
+@app.route('/')
+def home():
+    return "MONOCHROME Key Server activo"
+
+def run_flask():
+    port = int(os.environ.get('PORT', 8080))
+    app.run(host='0.0.0.0', port=port)
+
+threading.Thread(target=run_flask, daemon=True).start()
 bot.run(TOKEN)
